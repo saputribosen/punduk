@@ -4,7 +4,7 @@ HOSTNAME=$(ubus call system board | jsonfilter -e '@.hostname')
 
 CHAT_ID=$(uci get telegram.settings.group_id)
 BOT_TOKEN=$(uci get telegram.settings.bot_token)
-MSGTR=24
+MSGTR=$(uci get telegram.settings.message_thread_id)
 
 KNOWN_MAC_FILE="/tmp/known_mac.txt"
 LEASES_FILE="/tmp/dhcp.leases"
