@@ -1,0 +1,60 @@
+#!/bin/sh
+
+HOSTNAME=$(ubus call system board | jsonfilter -e '@.hostname')
+
+CHAT_ID=$(uci get telegram.settings.group_id)
+BOT_TOKEN=$(uci get telegram.settings.bot_token)
+MSGTR=24
+
+KNOWN_MAC_FILE="/tmp/known_mac.txt"
+LEASES_FILE="/tmp/dhcp.leases"
+
+if [ -f "$LEASES_FILE" ]; then
+    ACTIVE_DEVICES=$(cat "$LEASES_FILE" | wc -l)
+    echo "Total Aktif: $ACTIVE_DEVICES"
+else
+    echo "File $LEASES_FILE tidak ditemukan."
+fi
+
+send_telegram() {
+    curl -s --data "text=$1" --data "chat_id=$CHAT_ID" --data "message_thread_id=$MSGTR" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" > /dev/null
+}
+
+add_mac_to_known() {
+    echo "$1" >> "$KNOWN_MAC_FILE"
+}
+
+get_device_info() {
+    local mac="$1"
+    local device_name=$(grep "$mac" "$LEASES_FILE" | awk '{print $4}')
+    local device_ip=$(grep "$mac" "$LEASES_FILE" | awk '{print $3}')
+    
+    [ -z "$device_name" ] && device_name="Unknown"
+    [ -z "$device_ip" ] && device_ip="N/A"
+
+    echo "$device_name|$device_ip"
+}
+
+[ -f "$KNOWN_MAC_FILE" ] || touch "$KNOWN_MAC_FILE"
+
+if [ "$ACTION" = "add" ]; then
+    MAC_ADDRESS="$MACADDR"
+    if ! grep -q "$MAC_ADDRESS" "$KNOWN_MAC_FILE"; then
+        DEVICE_INFO=$(get_device_info "$MAC_ADDRESS")
+        DEVICE_NAME=$(echo "$DEVICE_INFO" | cut -d'|' -f1)
+        DEVICE_IP=$(echo "$DEVICE_INFO" | cut -d'|' -f2)
+
+send_telegram "
+Devices Detect.!!
+=====================
+♻️ OpenWRT : $HOSTNAME
+🔰 Name Device : $DEVICE_NAME
+🔰 MAC : $MAC_ADDRESS
+🔰 IP : $DEVICE_IP
+🔰 Device Aktif : $ACTIVE_DEVICES
+=====================
+by Aryo Brokolly"
+
+        add_mac_to_known "$MAC_ADDRESS"
+    fi
+fi
