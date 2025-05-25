@@ -17,7 +17,11 @@ else
 fi
 
 send_telegram() {
-    curl -s --data "text=$1" --data "chat_id=$CHAT_ID" --data "message_thread_id=$MSGTR" "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" > /dev/null
+    curl -s --data-urlencode "text=$1" \
+         --data "chat_id=$CHAT_ID" \
+         --data "message_thread_id=$MSGTR" \
+         --data "parse_mode=Markdown" \
+         "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" > /dev/null
 }
 
 add_mac_to_known() {
@@ -44,17 +48,17 @@ if [ "$ACTION" = "add" ]; then
         DEVICE_NAME=$(echo "$DEVICE_INFO" | cut -d'|' -f1)
         DEVICE_IP=$(echo "$DEVICE_INFO" | cut -d'|' -f2)
 
-send_telegram "
-Devices Detect.!!
-=====================
-♻️ OpenWRT : $HOSTNAME
-🔰 Name Device : $DEVICE_NAME
-🔰 MAC : $MAC_ADDRESS
-🔰 IP : $DEVICE_IP
-🔰 Device Aktif : $ACTIVE_DEVICES
-=====================
-by Aryo Brokolly"
+        MESSAGE="*👀 Perangkat Baru Terdeteksi!*
+━━━━━━━━━━━━━━━━
+🏠 *Router* : \`$HOSTNAME\`
+📱 *Nama* : \`$DEVICE_NAME\`
+🔗 *MAC* : \`$MAC_ADDRESS\`
+🌐 *IP* : \`$DEVICE_IP\`
+📊 *Total Aktif* : *$ACTIVE_DEVICES* perangkat
+━━━━━━━━━━━━━━━━
+👤 _by Aryo Brokolly_"
 
+        send_telegram "$MESSAGE"
         add_mac_to_known "$MAC_ADDRESS"
     fi
 fi
