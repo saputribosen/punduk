@@ -9,56 +9,63 @@ MSGTR=$(uci get telegram.settings.message_thread_id)
 KNOWN_MAC_FILE="/tmp/known_mac.txt"
 LEASES_FILE="/tmp/dhcp.leases"
 
-if [ -f "$LEASES_FILE" ]; then
-    ACTIVE_DEVICES=$(cat "$LEASES_FILE" | wc -l)
-    echo "Total Aktif: $ACTIVE_DEVICES"
-else
-    echo "File $LEASES_FILE tidak ditemukan."
-fi
+[ -f "$LEASES_FILE" ] && ACTIVE_DEVICES=$(wc -l < "$LEASES_FILE") || ACTIVE_DEVICES=0
+
+
+escape_v2() {
+    # _ * [ ] ( ) ~ ` > # + - = | { } . ! \
+    printf '%s' "$1" | sed -e 's/[_*\[\]()~`>#+\-=|{}.!\\]/\\&/g'
+}
 
 send_telegram() {
-    curl -s --data-urlencode "text=$1" \
+    local text="$1"
+    curl -sS --data-urlencode "text=$text" \
          --data "chat_id=$CHAT_ID" \
          --data "message_thread_id=$MSGTR" \
-         --data "parse_mode=Markdown" \
-         "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" > /dev/null
+         --data "parse_mode=MarkdownV2" \
+         "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+         | tee /tmp/tg_resp.json        # <-- buang tee kalau sudah jalan mulus
 }
 
-add_mac_to_known() {
-    echo "$1" >> "$KNOWN_MAC_FILE"
-}
-
-get_device_info() {
+add_known() { echo "$1" >> "$KNOWN_MAC_FILE"; }
+get_info() {
     local mac="$1"
-    local device_name=$(grep "$mac" "$LEASES_FILE" | awk '{print $4}')
-    local device_ip=$(grep "$mac" "$LEASES_FILE" | awk '{print $3}')
-    
-    [ -z "$device_name" ] && device_name="Unknown"
-    [ -z "$device_ip" ] && device_ip="N/A"
-
-    echo "$device_name|$device_ip"
+    local line
+    line=$(grep -i "$mac" "$LEASES_FILE")
+    printf '%s|%s\n' "$(echo "$line" | awk '{print $4}')" "$(echo "$line" | awk '{print $3}')"
 }
+
 
 [ -f "$KNOWN_MAC_FILE" ] || touch "$KNOWN_MAC_FILE"
+if [ "$ACTION" = "add" ] && [ -n "$MACADDR" ]; then
+    MAC="$MACADDR"
+    if ! grep -iq "$MAC" "$KNOWN_MAC_FILE"; then
+        IFS='|' read -r DEV_NAME DEV_IP <<EOF
+$(get_info "$MAC")
+EOF
 
-if [ "$ACTION" = "add" ]; then
-    MAC_ADDRESS="$MACADDR"
-    if ! grep -q "$MAC_ADDRESS" "$KNOWN_MAC_FILE"; then
-        DEVICE_INFO=$(get_device_info "$MAC_ADDRESS")
-        DEVICE_NAME=$(echo "$DEVICE_INFO" | cut -d'|' -f1)
-        DEVICE_IP=$(echo "$DEVICE_INFO" | cut -d'|' -f2)
+        # Escape variabel sebelum dimasukkan ke pesan
+        ESC_HOST=$(escape_v2 "$HOSTNAME")
+        ESC_MAC=$(escape_v2 "$MAC")
+        ESC_NAME=$(escape_v2 "${DEV_NAME:-Unknown}")
+        ESC_IP=$(escape_v2 "${DEV_IP:-N/A}")
+        ESC_TOTAL=$(escape_v2 "$ACTIVE_DEVICES")
 
-        MESSAGE="*👀 Perangkat Baru Terdeteksi!*
+
+        read -r -d '' MESSAGE <<EOF
+*👀 Perangkat Baru Terdeteksi\\!*
 ━━━━━━━━━━━━━━━━
-🏠 *Router* : \`$HOSTNAME\`
-📱 *Nama* : \`$DEVICE_NAME\`
-🔗 *MAC* : \`$MAC_ADDRESS\`
-🌐 *IP* : \`$DEVICE_IP\`
-📊 *Total Aktif* : *$ACTIVE_DEVICES* perangkat
+🏠 *Router* : \`$ESC_HOST\`
+📱 *Nama*   : \`$ESC_NAME\`
+🔗 *MAC*    : \`$ESC_MAC\`
+🌐 *IP*     : \`$ESC_IP\`
+📊 *Total Aktif* : *$ESC_TOTAL* perangkat
 ━━━━━━━━━━━━━━━━
-👤 _by Aryo Brokolly_"
+👤 ||by Aryo Brokolly||
+EOF
 
+        # Kirim & catat MAC baru
         send_telegram "$MESSAGE"
-        add_mac_to_known "$MAC_ADDRESS"
+        add_known "$MAC"
     fi
 fi
